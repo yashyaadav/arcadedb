@@ -1,7 +1,6 @@
 # ArcadeDB on AWS — Multi-Tenant Knowledge Base Platform
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Status: Phase D](https://img.shields.io/badge/status-CTO_approval_package_(Phase_D)-orange.svg)](#status--roadmap)
 ![Terraform / OpenTofu](https://img.shields.io/badge/Terraform%2FOpenTofu-%E2%89%A51.10-7B42BC?logo=terraform&logoColor=white)
 ![Kubernetes (EKS)](https://img.shields.io/badge/Kubernetes-EKS_1.31-326CE5?logo=kubernetes&logoColor=white)
 ![Helm](https://img.shields.io/badge/Helm-chart-0F1689?logo=helm&logoColor=white)
