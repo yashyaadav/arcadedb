@@ -1,5 +1,14 @@
 # ArcadeDB on AWS — Multi-Tenant Knowledge Base Platform
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Status: Phase D](https://img.shields.io/badge/status-CTO_approval_package_(Phase_D)-orange.svg)](#status--roadmap)
+![Terraform / OpenTofu](https://img.shields.io/badge/Terraform%2FOpenTofu-%E2%89%A51.10-7B42BC?logo=terraform&logoColor=white)
+![Kubernetes (EKS)](https://img.shields.io/badge/Kubernetes-EKS_1.31-326CE5?logo=kubernetes&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-chart-0F1689?logo=helm&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-Graviton_·_KMS_·_DynamoDB-FF9900?logo=amazonwebservices&logoColor=white)
+![ArcadeDB](https://img.shields.io/badge/ArcadeDB-%E2%89%A5_26.4.1-1f6feb.svg)
+![Policy as code](https://img.shields.io/badge/Policy-OPA_·_Conftest-7D4698.svg)
+
 > **Status: CTO approval package (Phase D).** This repository contains the
 > **High-Level Design**, **basic boilerplate IaC templates**, and the **Claude
 > Code day-one handover kit** that ship to the CTO for sign-off **before any AWS
@@ -181,3 +190,17 @@ commands touch AWS.** `terraform`/`tofu` run with `-backend=false` and never
 - **After sign-off — Phases 0–4:** author the **Low-Level Design** (`docs/lld.md`), then build
   the landing zone → single-cell HA → control plane + tenant lifecycle → multi-region + DR →
   observability/SLO/handover hardening. See [`docs/architecture.md` §11](docs/architecture.md#11-rollout-phases-deliverables--exit-criteria).
+
+> **How this started:** the original four-line problem statement and the first raw plan
+> are preserved in [`docs/design-process/`](docs/design-process/) — the path from a blank
+> page to this package.
+
+## Contributing & security
+
+Questions, feedback, and critiques of the design are welcome — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).
+
+## License
+
+Licensed under the **Apache License 2.0** — see [`LICENSE`](LICENSE). ArcadeDB itself is
+Apache 2.0, so the whole stack stays permissively licensed.
