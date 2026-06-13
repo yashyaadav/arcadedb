@@ -1,0 +1,57 @@
+# ─── Terraform / OpenTofu ──────────────────────────────────────────────
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+# Allow example/committed tfvars, ignore real secret-bearing ones
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl.bak
+
+# ─── Helm ──────────────────────────────────────────────────────────────
+helm/**/charts/
+helm/**/*.tgz
+helm/**/Chart.lock
+
+# ─── Node / control-plane ──────────────────────────────────────────────
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# ─── Secrets & credentials (defence in depth — never commit) ───────────
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+.aws/
+kubeconfig
+*.kubeconfig
+
+# ─── OS / editor ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# ─── Build/scan artefacts ──────────────────────────────────────────────
+*.sarif
+tfplan
+tfplan.*
+plan.json
+sbom.json
+trivy-results.*

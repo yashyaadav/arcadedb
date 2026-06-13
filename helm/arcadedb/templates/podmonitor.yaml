@@ -1,0 +1,21 @@
+{{- if .Values.metrics.podMonitor.enabled }}
+# Prometheus Operator PodMonitor for ArcadeDB /prometheus (F6 MIME workaround).
+# CRD — kubeconform skips when the schema is absent (-ignore-missing-schemas).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "arcadedb.fullname" . }}
+  labels:
+    {{- include "arcadedb.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "arcadedb.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http
+      path: {{ .Values.metrics.path }}
+      interval: {{ .Values.metrics.podMonitor.interval }}
+      # MIME workaround: force the Prometheus text exposition parser since
+      # ArcadeDB returns Content-Type: application/json for /prometheus (F6/A17).
+      fallbackScrapeProtocol: PrometheusText0.0.4
+{{- end }}

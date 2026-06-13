@@ -1,0 +1,24 @@
+apiVersion: v2
+name: arcadedb
+description: >-
+  ArcadeDB cell — a 3-node Raft StatefulSet for the multi-tenant KB platform.
+  Encodes the platform invariants: version floor >= 26.4.1, quorum (replicas=3 +
+  PDB minAvailable=2), the memory sizing rule, txWalFlush tiering, /ready probes,
+  and the /prometheus MIME-type workaround. See values.yaml + ../CLAUDE.md.
+type: application
+
+# Chart version (pin all versions — ADR-0012). Bump on chart changes.
+version: 0.1.0
+
+# The ArcadeDB version this chart targets. MUST be >= 26.4.1 (ADR-0012):
+# closes the CVSS-9.0 cross-DB isolation CVE + gives GA Raft HA.
+appVersion: "26.4.1"
+
+keywords: [arcadedb, graph, vector, knowledge-base, raft, multi-tenant]
+home: https://arcadedb.com
+sources:
+  - https://github.com/ArcadeData/arcadedb
+  - https://github.com/ArcadeData/arcadedb-helm
+maintainers:
+  - name: platform-team
+    email: platform@example.com

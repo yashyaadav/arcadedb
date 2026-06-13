@@ -1,0 +1,25 @@
+{{- if .Values.service.headless.enabled }}
+# Headless Service — stable per-pod FQDNs for Raft peer discovery (F1).
+# <cell>-headless.<ns>.svc.cluster.local resolves each ordinal pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "arcadedb.headlessServiceName" . }}
+  labels:
+    {{- include "arcadedb.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true   # peers must resolve during startup/elections
+  selector:
+    {{- include "arcadedb.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.ports.http }}
+      targetPort: http
+    - name: binary
+      port: {{ .Values.ports.binary }}
+      targetPort: binary
+    - name: raft
+      port: {{ .Values.ports.raft }}
+      targetPort: raft
+{{- end }}

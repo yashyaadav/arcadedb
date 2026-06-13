@@ -1,0 +1,121 @@
+{
+  "Comment": "Tenant provisioning — idempotent, retryable, auditable (HLD §5.4, ADR-0008). INTERFACE STUB: Lambda ARNs are placeholders; wired in Phase 2. Each step is idempotent so re-running converges.",
+  "StartAt": "AssertHomeGeo",
+  "States": {
+    "AssertHomeGeo": {
+      "Type": "Choice",
+      "Comment": "Residency guard (ADR-0007): reject if home_geo != this control plane's geo.",
+      "Choices": [
+        {
+          "Variable": "$.home_geo",
+          "StringEqualsPath": "$.control_plane_geo",
+          "Next": "CreateDatabase"
+        }
+      ],
+      "Default": "RejectCrossGeo"
+    },
+    "RejectCrossGeo": {
+      "Type": "Fail",
+      "Error": "ResidencyViolation",
+      "Cause": "home_geo does not match this control plane's geo (EU<->US path forbidden)."
+    },
+    "CreateDatabase": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Create the tenant's ArcadeDB database, replicated 3x (idempotent: no-op if exists).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-create-database",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.create_db",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 4,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ProvisioningFailed" }],
+      "Next": "CreateLeastPrivUser"
+    },
+    "CreateLeastPrivUser": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Create a per-DB least-privilege user + group (NOT root — F4).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-create-db-user",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.create_user",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ProvisioningFailed" }],
+      "Next": "CreateIndexes"
+    },
+    "CreateIndexes": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Create HNSW (vector) + Lucene (full-text) indexes for GraphRAG (F7, ADR-0024).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-create-indexes",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.create_indexes",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 10, "MaxAttempts": 3, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ProvisioningFailed" }],
+      "Next": "StoreCredentials"
+    },
+    "StoreCredentials": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Store tenant DB credentials in Secrets Manager (KMS, rotatable — ADR-0018).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-store-tenant-secret",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.secret",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ProvisioningFailed" }],
+      "Next": "RegisterBackup"
+    },
+    "RegisterBackup": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Register the backup schedule + retention tier for the tenant (ADR-0015).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-register-backup",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.backup",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ProvisioningFailed" }],
+      "Next": "UpdateRegistry"
+    },
+    "UpdateRegistry": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Set registry status=active + emit an app-layer audit event (F4/§7.1).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-registry-activate",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.registry",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ProvisioningFailed" }],
+      "Next": "ProvisioningSucceeded"
+    },
+    "ProvisioningSucceeded": {
+      "Type": "Succeed"
+    },
+    "ProvisioningFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Emit failure audit event + mark registry status. Idempotent re-run resumes.",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-provision-failed",
+        "Payload.$": "$"
+      },
+      "End": true
+    }
+  }
+}

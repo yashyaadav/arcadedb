@@ -1,0 +1,29 @@
+###############################################################################
+# landing-zone — EXAMPLE tfvars. Copy to terraform.tfvars and fill placeholders.
+# DO NOT commit a real terraform.tfvars with account IDs (see .gitignore).
+###############################################################################
+
+home_region          = "us-east-1"
+organization_root_id = "r-REPLACE" # from `aws organizations list-roots`
+
+geos = {
+  eu = {
+    ou_display_name = "Workloads-EU"
+    allowed_regions = ["eu-central-1", "eu-west-1"]
+  }
+  us = {
+    ou_display_name = "Workloads-US"
+    allowed_regions = ["us-east-1", "us-west-2"]
+  }
+}
+
+eu_state_region = "eu-central-1"
+us_state_region = "us-east-1"
+
+# Set to enable permission-set creation; leave null to validate the template only.
+sso_instance_arn = null # "arn:aws:sso:::instance/ssoins-REPLACE"
+
+tags = {
+  owner       = "platform-team"
+  cost-center = "kb-platform"
+}

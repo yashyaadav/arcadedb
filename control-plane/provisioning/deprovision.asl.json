@@ -1,0 +1,73 @@
+{
+  "Comment": "Tenant deprovisioning / erasure (RTBF/DSAR data-layer primitives — §7.1). INTERFACE STUB: Lambda ARNs are placeholders. Emits deletion evidence. One DB per tenant makes whole-tenant erasure clean.",
+  "StartAt": "AssertHomeGeo",
+  "States": {
+    "AssertHomeGeo": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.home_geo", "StringEqualsPath": "$.control_plane_geo", "Next": "FinalBackup" }
+      ],
+      "Default": "RejectCrossGeo"
+    },
+    "RejectCrossGeo": {
+      "Type": "Fail",
+      "Error": "ResidencyViolation",
+      "Cause": "home_geo does not match this control plane's geo."
+    },
+    "FinalBackup": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Optional final retained backup before erasure (legal hold aware).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-final-backup",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.final_backup",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2.0 }],
+      "Next": "DropDatabase"
+    },
+    "DropDatabase": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Drop the tenant DB (or crypto-shred the per-tenant CMK for enterprise).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-drop-database",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.drop",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "DeprovisionFailed" }],
+      "Next": "RevokeSecrets"
+    },
+    "RevokeSecrets": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Delete tenant DB credentials from Secrets Manager.",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-revoke-secret",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.revoke",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Next": "EmitDeletionEvidence"
+    },
+    "EmitDeletionEvidence": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Set registry status=erased + emit deletion evidence (audit event + certificate).",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REGION:ACCOUNT_ID:function:kb-deletion-evidence",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.evidence",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 4, "BackoffRate": 2.0 }],
+      "Next": "DeprovisionSucceeded"
+    },
+    "DeprovisionSucceeded": { "Type": "Succeed" },
+    "DeprovisionFailed": {
+      "Type": "Fail",
+      "Error": "DeprovisionFailed",
+      "Cause": "See $.error; re-run is idempotent (drop is a no-op if the DB is already gone)."
+    }
+  }
+}

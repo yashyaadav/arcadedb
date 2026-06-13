@@ -1,0 +1,15 @@
+{{- if .Values.pdb.enabled }}
+# PodDisruptionBudget — protect Raft quorum during voluntary disruptions
+# (drains, upgrades). minAvailable=2 for a 3-node cell (prime directive #3).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "arcadedb.fullname" . }}
+  labels:
+    {{- include "arcadedb.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "arcadedb.selectorLabels" . | nindent 6 }}
+{{- end }}

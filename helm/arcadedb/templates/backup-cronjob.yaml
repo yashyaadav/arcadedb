@@ -1,0 +1,56 @@
+{{- if .Values.backup.enabled }}
+# Hot per-DB ZIP backup CronJob (ADR-0015). Calls the ArcadeDB backup API,
+# verifies the ZIP, uploads to S3 (no native S3 target — F5), and (in the LLD)
+# records status in the registry for last-backup-age alerting.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "arcadedb.fullname" . }}-backup
+  labels:
+    {{- include "arcadedb.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "arcadedb.selectorLabels" . | nindent 12 }}
+            platform.kb/job: backup
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ default (include "arcadedb.serviceAccountName" .) .Values.backup.serviceAccountName }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: backup
+              image: {{ .Values.backup.image }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  # 1) call ArcadeDB backup API per DB (hot ZIP) → /tmp
+                  # 2) verify the ZIP integrity
+                  # 3) aws s3 cp to s3://$BUCKET/$PREFIX/<tenant>/<ts>.zip (SSE-KMS)
+                  # 4) (LLD) PUT last-backup status to the registry
+                  echo "backup placeholder — implemented in Phase 2 (ADR-0015)"
+              env:
+                - name: BUCKET
+                  value: {{ .Values.backup.bucket | quote }}
+                - name: PREFIX
+                  value: {{ default (printf "cell/%s" .Values.cellId) .Values.backup.prefix | quote }}
+                - name: ARCADEDB_HTTP
+                  value: "http://{{ include "arcadedb.fullname" . }}:{{ .Values.ports.http }}"
+              resources:
+                requests:
+                  cpu: "250m"
+                  memory: "256Mi"
+                limits:
+                  memory: "512Mi"
+{{- end }}

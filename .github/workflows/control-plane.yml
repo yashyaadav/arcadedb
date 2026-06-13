@@ -1,0 +1,43 @@
+name: control-plane
+
+# Build/test the control-plane code (registry, router, provisioning) + validate
+# the Step Functions ASL JSON. INTERFACE STUBS in the CTO package; full tests in
+# Phase 2.
+
+on:
+  pull_request:
+    paths:
+      - "control-plane/**"
+      - ".github/workflows/control-plane.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control-plane
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+
+  asl-valid-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Step Functions ASL is valid JSON
+        run: |
+          for f in control-plane/provisioning/*.json; do
+            python3 -c "import json,sys; json.load(open('$f')); print('valid:', '$f')"
+          done

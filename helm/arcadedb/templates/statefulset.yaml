@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "arcadedb.fullname" . }}
+  labels:
+    {{- include "arcadedb.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "arcadedb.headlessServiceName" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: OrderedReady   # bring peers up one at a time (stable Raft join)
+  updateStrategy:
+    type: RollingUpdate              # NOTE: real upgrades use the quorum-aware
+                                     # Argo workflow (ADR-0029), not this alone.
+  selector:
+    matchLabels:
+      {{- include "arcadedb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arcadedb.labels" . | nindent 8 }}
+      annotations:
+        platform.kb/tx-wal-flush: {{ .Values.arcadedb.txWalFlush | quote }}
+        platform.kb/image: {{ include "arcadedb.image" . | quote }}
+    spec:
+      serviceAccountName: {{ include "arcadedb.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecret }}
+      imagePullSecrets:
+        - name: {{ . }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- if .Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          # Hard: at most one ArcadeDB pod per AZ (protects quorum on AZ loss — ADR-0010).
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "arcadedb.selectorLabels" . | nindent 18 }}
+              topologyKey: {{ .Values.podAntiAffinity.topologyKey }}
+      {{- end }}
+      containers:
+        - name: arcadedb
+          image: {{ include "arcadedb.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+            - name: binary
+              containerPort: {{ .Values.ports.binary }}
+            - name: raft
+              containerPort: {{ .Values.ports.raft }}
+            - name: bolt
+              containerPort: {{ .Values.ports.bolt }}
+          env:
+            # Memory sizing (prime directive #7). Heap modest; rest to page cache.
+            # NOTE: align maxPageRAM units with the ArcadeDB version's docs.
+            - name: JAVA_OPTS
+              value: >-
+                -Xms{{ .Values.sizing.heapGib }}g
+                -Xmx{{ .Values.sizing.heapGib }}g
+                -Darcadedb.maxPageRAM={{ mul (int .Values.sizing.maxPageRAMGib) 1024 }}
+                -Darcadedb.txWalFlush={{ .Values.arcadedb.txWalFlush }}
+                -Darcadedb.ha.enabled={{ .Values.arcadedb.ha.enabled }}
+                -Darcadedb.ha.serverList=$(HA_SERVER_LIST)
+                {{- range $k, $v := .Values.arcadedb.extraSettings }}
+                -Darcadedb.{{ $k }}={{ $v }}
+                {{- end }}
+            # Stable peer list from the headless Service (Raft discovery, F1).
+            - name: HA_SERVER_LIST
+              value: "{{ include "arcadedb.headlessServiceName" . }}"
+            {{- if .Values.arcadedb.rootPasswordSecret.name }}
+            # Root password — SET-ONCE at first boot (F4). Never re-set to rotate.
+            - name: ARCADEDB_SERVER_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.arcadedb.rootPasswordSecret.name }}
+                  key: {{ .Values.arcadedb.rootPasswordSecret.key }}
+            {{- end }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.sizing.cpuRequest | quote }}
+              memory: {{ printf "%dGi" (int .Values.sizing.podMemoryRequestGib) | quote }}
+            limits:
+              memory: {{ printf "%dGi" (int .Values.sizing.podMemoryLimitGib) | quote }}
+              {{- if .Values.sizing.cpuLimit }}
+              cpu: {{ .Values.sizing.cpuLimit | quote }}
+              {{- end }}
+          # /ready returns HTTP 204 (no auth — F6). 204 counts as success.
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: http
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          volumeMounts:
+            - name: data
+              mountPath: /home/arcadedb/databases
+        {{- if .Values.metrics.mimeWorkaround.sidecar.enabled }}
+        # Optional sidecar: rewrites the /prometheus Content-Type (F6/A17).
+        - name: prom-mime-fix
+          image: {{ .Values.metrics.mimeWorkaround.sidecar.image }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.mimeWorkaround.sidecar.port }}
+          # Config (reverse proxy → 127.0.0.1:2480/prometheus, force text/plain)
+          # is mounted in the LLD; this is a placeholder container.
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "arcadedb.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClassName }}
+        storageClassName: {{ .Values.persistence.storageClassName }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
