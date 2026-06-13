@@ -1,0 +1,5 @@
+I want to host Arcade DB as foundation for upcoming Knowledge Base we are developing for our AI SAAS Software. 
+The problem involved hosting Arcade DB on AWS in for our production SAAS system. This cluster needs to support out tenants who will have one database (virtual) on Arcade DB. 
+How will you plan, deploy and operate this foundational infrastructure using AI?
+How do we build it from day one so we can seamlessly hand it over to our cloud ops hosting team?
+ 
