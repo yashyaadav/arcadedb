@@ -6,7 +6,6 @@
 ![Helm](https://img.shields.io/badge/Helm-chart-0F1689?logo=helm&logoColor=white)
 ![AWS](https://img.shields.io/badge/AWS-Graviton_·_KMS_·_DynamoDB-FF9900?logo=amazonwebservices&logoColor=white)
 ![ArcadeDB](https://img.shields.io/badge/ArcadeDB-%E2%89%A5_26.4.1-1f6feb.svg)
-![Policy as code](https://img.shields.io/badge/Policy-OPA_·_Conftest-7D4698.svg)
 
 > **Status: CTO approval package (Phase D).** This repository contains the
 > **High-Level Design**, **basic boilerplate IaC templates**, and the **Claude
