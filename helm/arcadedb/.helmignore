@@ -1,0 +1,8 @@
+.git
+.gitignore
+*.md
+*.bak
+*.tmp
+.DS_Store
+ci/
+tests/

@@ -1,0 +1,72 @@
+name: image-supply-chain
+
+# Mirror the pinned ArcadeDB image into per-region ECR, scan it (Trivy), verify
+# the arm64 digest (ADR-0009), and SIGN it with cosign (ADR-0012 / HLD §7.1).
+# Kyverno/Gatekeeper admission then rejects unsigned / critical-CVE images.
+#
+# POST-APPROVAL: needs ECR + an OIDC role. Not exercised in the CTO package.
+
+on:
+  workflow_dispatch:
+    inputs:
+      arcadedb_version:
+        description: "ArcadeDB version (>= 26.4.1)"
+        required: true
+        default: "26.4.1"
+
+permissions:
+  contents: read
+  id-token: write # OIDC to assume the ECR push role
+
+env:
+  SOURCE_IMAGE: arcadedata/arcadedb
+  # Per-region ECR registries (residency: mirror per geo).
+  ECR_REGISTRIES: "ECR_EU_CENTRAL_1 ECR_US_EAST_1"
+
+jobs:
+  enforce-version-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce version floor >= 26.4.1 (ADR-0012)
+        run: |
+          v="${{ github.event.inputs.arcadedb_version }}"
+          floor="26.4.1"
+          lowest=$(printf '%s\n%s\n' "$v" "$floor" | sort -V | head -1)
+          if [ "$lowest" != "$floor" ] && [ "$v" != "$floor" ]; then
+            echo "::error::ArcadeDB $v is below the 26.4.1 floor (closes the CVSS-9.0 isolation CVE)."
+            exit 1
+          fi
+          echo "version $v OK"
+
+  mirror-scan-sign:
+    needs: enforce-version-floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
+
+      # - uses: aws-actions/configure-aws-credentials@v4   # OIDC role with ECR push
+      # - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Verify arm64 manifest exists (ADR-0009)
+        run: |
+          docker buildx imagetools inspect \
+            "${SOURCE_IMAGE}:${{ github.event.inputs.arcadedb_version }}" \
+            | grep -q "linux/arm64" || { echo "::error::no arm64 image"; exit 1; }
+
+      - name: Trivy image scan (block on CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: "${SOURCE_IMAGE}:${{ github.event.inputs.arcadedb_version }}"
+          severity: CRITICAL
+          exit-code: "1"
+
+      - name: Mirror + sign per region (placeholder)
+        run: |
+          echo "for each ECR registry: docker pull → tag → push → cosign sign by DIGEST"
+          echo "record the digest; Helm values pin image.digest (immutable deploys)"

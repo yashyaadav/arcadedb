@@ -1,0 +1,183 @@
+###############################################################################
+# ArcadeDB cell — values.yaml (documented template).
+#
+# This is the load-bearing config for an ArcadeDB cell. Every block ties back to
+# a verified ArcadeDB fact (F1–F7) or a prime directive. Read the comments — the
+# defaults are SAFE but you MUST set per-cell values (storageClassName, cellId,
+# image.digest, peer list) for a real deploy.
+#
+# The platform's own thin chart (this) renders a quorum-correct StatefulSet. In
+# the GitOps model an Argo ApplicationSet templates these values per cell
+# (ADR-0021). The Terraform `cell` module can alternatively install it.
+###############################################################################
+
+# ─── Image (version floor + digest pinning — ADR-0012) ──────────────────────
+image:
+  repository: arcadedata/arcadedb
+  # MUST be a semver >= 26.4.1. NEVER "latest". Mirror into per-region ECR for prod.
+  tag: "26.4.1"
+  # Prefer pinning by DIGEST in prod (immutable + tamper-evident). If set, it wins.
+  digest: ""               # e.g. "sha256:REPLACE_WITH_MIRRORED_DIGEST"
+  pullPolicy: IfNotPresent
+  # ECR pull secret name (if mirroring privately). Empty => node IAM (ECR read).
+  pullSecret: ""
+
+# ─── Quorum (prime directive #3) ────────────────────────────────────────────
+# 3 in prod (one pod per AZ). Non-prod MAY be 1 (single-node, no HA) for cost.
+replicaCount: 3
+
+# Cell identity — set per cell (e.g. "kb-eu-prod-std-01"). Used in names/labels.
+cellId: "arcadedb"
+
+# ─── Memory sizing (THE #1 GOTCHA — prime directive #7) ─────────────────────
+# Pod memory LIMIT must be >= maxPageRAM + heap + overhead, or the kernel
+# OOM-kills a node and a member leaves Raft (risking quorum). The chart FAILS to
+# render if this is violated (see templates/_helpers.tpl). All values in GiB.
+sizing:
+  maxPageRAMGib: 32        # off-heap page cache — the bulk of RAM (F-scaling)
+  heapGib: 8               # JVM -Xmx — keep modest
+  overheadGib: 6           # JVM/OS/metaspace + vector-index headroom (A6)
+  podMemoryLimitGib: 46    # >= 32 + 8 + 6
+  podMemoryRequestGib: 46  # == limit => Guaranteed QoS (recommended for the DB)
+  cpuRequest: "4"
+  # CPU LIMIT intentionally EMPTY: a tight CPU limit throttles the JVM and
+  # starves Raft heartbeats → leader flapping (HLD §5.5). Leave unset unless
+  # you have a specific reason.
+  cpuLimit: ""
+
+# ─── ArcadeDB engine settings ───────────────────────────────────────────────
+arcadedb:
+  # Durability per tier (ADR-0013): 0/1 standard (throughput), 2 enterprise (fsync).
+  txWalFlush: 1
+  # HA / Raft (F1). Peer list is derived from the headless Service FQDNs by the
+  # StatefulSet (see templates/statefulset.yaml). Quorum needs >= 3.
+  ha:
+    enabled: true
+    # Raft election timeout window; client failover retries must exceed this.
+    quorum: "majority"
+  # Root password is SET-ONCE (F4): injected from a secret at FIRST boot only.
+  # "Rotating root" = provision a NEW admin server-user (see rotate-secrets skill).
+  rootPasswordSecret:
+    name: ""               # set per cell, e.g. "<cellId>-arcadedb-root"
+    key: "root-password"
+  # Extra "-Darcadedb.*" settings as key: value (rendered into JAVA_OPTS).
+  extraSettings: {}
+    # server.databaseDirectory: /data
+    # network.binaryPort: "2424"
+
+# ─── Ports (NEVER exposed publicly — prime directive #4) ────────────────────
+ports:
+  http: 2480               # Studio/HTTP API + /ready + /prometheus
+  binary: 2424             # binary protocol
+  raft: 2434               # HA / Raft gossip (peer-to-peer)
+  bolt: 7687               # Bolt (optional)
+  # postgres: 5432         # Postgres-wire — expose ONLY if an external consumer needs it
+
+# ─── Storage (gp3, KMS, AZ-bound — HLD §5.5) ────────────────────────────────
+persistence:
+  enabled: true
+  # Set to the per-cell StorageClass created by the cell module (gp3 + KMS +
+  # WaitForFirstConsumer + Retain). Empty => cluster default (NOT recommended).
+  storageClassName: ""
+  size: 200Gi
+  accessModes: [ReadWriteOnce]
+
+# ─── Scheduling — one pod per AZ, on the stateful DB nodes (ADR-0010) ───────
+nodeSelector:
+  workload: arcadedb
+tolerations:
+  - key: workload
+    operator: Equal
+    value: arcadedb
+    effect: NoSchedule
+# Hard anti-affinity: at most one ArcadeDB pod per AZ (protects quorum on AZ loss).
+podAntiAffinity:
+  enabled: true
+  topologyKey: topology.kubernetes.io/zone
+
+# ─── Health probes — /ready (HTTP 204, no auth — F6) ────────────────────────
+probes:
+  readiness:
+    path: /ready
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 6
+  liveness:
+    path: /ready
+    initialDelaySeconds: 60
+    periodSeconds: 20
+    failureThreshold: 6
+  # Generous startup probe — ArcadeDB + index load can be slow on big DBs.
+  startup:
+    path: /ready
+    periodSeconds: 10
+    failureThreshold: 60   # up to ~10 min to become ready
+
+# ─── PodDisruptionBudget (prime directive #3) ───────────────────────────────
+pdb:
+  enabled: true
+  minAvailable: 2          # never drop below quorum during drains/upgrades
+
+# ─── Services ───────────────────────────────────────────────────────────────
+service:
+  # Headless service for Raft peer discovery (stable FQDNs).
+  headless:
+    enabled: true
+  # ClusterIP for in-cluster clients (control plane / retrieval). NEVER a public LB.
+  client:
+    type: ClusterIP
+
+# ─── Metrics — AMP scrape of /prometheus + the MIME-type workaround (F6/A17) ─
+metrics:
+  enabled: true
+  path: /prometheus
+  port: 2480
+  # ArcadeDB returns Content-Type: application/json for /prometheus (known bug).
+  # WORKAROUND (pick one):
+  #   (a) ADOT/Prometheus scrape: force the text parser / override the content
+  #       type in the scrape job (fallback_scrape_protocol: PrometheusText0.0.4).
+  #   (b) run the header-rewriting sidecar below to rewrite the Content-Type.
+  mimeWorkaround:
+    # Prefer (a). Set sidecar.enabled=true only if your scraper can't override.
+    sidecar:
+      enabled: false
+      image: "nginx:1.27-alpine"   # tiny reverse proxy rewriting Content-Type
+      port: 9099
+  # Prometheus Operator PodMonitor (CRD — kubeconform skips if schema absent).
+  podMonitor:
+    enabled: false
+    interval: 30s
+
+# ─── Backup CronJob sidecar (hot per-DB ZIP → S3 — ADR-0015) ────────────────
+backup:
+  enabled: false
+  schedule: "0 */6 * * *"  # standard 6h; enterprise 1h ("0 * * * *")
+  image: "amazon/aws-cli:2.17.0"
+  bucket: ""               # from backup-dr module (kb-backups-<geo>-<env>)
+  prefix: ""               # cell/<cellId>
+  retentionDays: 30
+  # Pod Identity service account with s3:PutObject on the backup prefix.
+  serviceAccountName: ""
+
+# ─── Pod-level security context (PSA "restricted") ──────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false   # ArcadeDB writes temp/log dirs; mount emptyDir if true
+  capabilities:
+    drop: [ALL]
+
+# ─── Misc ───────────────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+extraLabels: {}
+extraEnv: []
+terminationGracePeriodSeconds: 120

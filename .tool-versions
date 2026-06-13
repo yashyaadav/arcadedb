@@ -1,0 +1,13 @@
+# Pinned tool versions (asdf / mise compatible). Mirrors terraform/versions.tf.
+# These are FLOORS validated for the CTO package; bump deliberately + via ADR.
+# Terraform/OpenTofu floor is >=1.10 for S3-native state locking (ADR-0022).
+opentofu 1.10.3
+terraform 1.10.5
+tflint 0.55.1
+helm 3.16.4
+kubeconform 0.6.7
+conftest 0.56.0
+trivy 0.62.1
+cosign 2.4.1
+# Note: the local validation env may run newer patch versions of these tools;
+# the design only requires >= the floors above.

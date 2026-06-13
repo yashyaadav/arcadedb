@@ -1,0 +1,49 @@
+name: terraform-validate
+
+# Offline validation — the same checks as `make validate` (no AWS, no credentials).
+# Runs on every PR touching Terraform.
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-validate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fmt-validate-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.10.3" # floor; >= 1.10 for S3-native state locking (ADR-0022)
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.55.1
+
+      - name: terraform fmt (check)
+        run: tofu fmt -recursive -check -diff terraform
+
+      - name: init -backend=false + validate (all modules + envs)
+        run: |
+          set -e
+          for d in $(find terraform -name '*.tf' -exec dirname {} \; | sort -u); do
+            echo "── $d"
+            tofu -chdir="$d" init -backend=false -input=false -no-color >/dev/null
+            tofu -chdir="$d" validate -no-color
+          done
+
+      - name: tflint (all modules + envs)
+        run: |
+          set -e
+          for d in $(find terraform -name '*.tf' -exec dirname {} \; | sort -u); do
+            (cd "$d" && tflint --no-color)
+          done

@@ -1,0 +1,20 @@
+# Client Service (ClusterIP) — in-cluster access only (control plane / retrieval).
+# NEVER a public LoadBalancer (prime directive #4). External app access is via the
+# platform API → internal NLB → PrivateLink (ADR-0026), not this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "arcadedb.fullname" . }}
+  labels:
+    {{- include "arcadedb.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.client.type }}
+  selector:
+    {{- include "arcadedb.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.ports.http }}
+      targetPort: http
+    - name: bolt
+      port: {{ .Values.ports.bolt }}
+      targetPort: bolt

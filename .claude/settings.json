@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make validate)",
+      "Bash(make fmt-check)",
+      "Bash(make tf-validate)",
+      "Bash(make tflint)",
+      "Bash(make conftest)",
+      "Bash(make helm-lint)",
+      "Bash(make kubeconform)",
+      "Bash(tofu fmt:*)",
+      "Bash(tofu validate:*)",
+      "Bash(tofu init -backend=false:*)",
+      "Bash(terraform fmt:*)",
+      "Bash(terraform validate:*)",
+      "Bash(tflint:*)",
+      "Bash(conftest verify:*)",
+      "Bash(conftest test:*)",
+      "Bash(helm lint:*)",
+      "Bash(helm template:*)",
+      "Bash(kubeconform:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(aws sts get-caller-identity:*)"
+    ],
+    "deny": [
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(tofu apply:*)",
+      "Bash(tofu destroy:*)",
+      "Read(./**/*.tfstate)",
+      "Read(./**/*.tfstate.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/guard-bash.sh" }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/guard-edit.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/post-tf.sh" },
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/post-helm.sh" },
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/post-controlplane.sh" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/inject-context.sh" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/session-start.sh" }
+        ]
+      }
+    ]
+  }
+}

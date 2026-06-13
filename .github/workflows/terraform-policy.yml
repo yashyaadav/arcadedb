@@ -1,0 +1,58 @@
+name: terraform-policy
+
+# OPA/Conftest policy gates: residency (no out-of-geo region) + no-public-DB.
+# These are HARD gates (residency is a CI gate, not just an SCP — HLD §7.6).
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "policy/**"
+      - ".github/workflows/terraform-policy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Conftest
+        uses: open-policy-agent/setup-conftest@v2
+        with:
+          version: v0.56.0
+      - name: Verify policy unit tests
+        run: conftest verify --policy policy/conftest
+
+  policy-against-plan:
+    # Post-approval: runs the gates against a real plan per environment.
+    # Requires read-only AWS creds (OIDC) to plan — NOT used in the CTO package.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env:
+          - { dir: eu-prod, allowed: '["eu-central-1","eu-west-1"]' }
+          - { dir: us-prod, allowed: '["us-east-1","us-west-2"]' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.10.3"
+      - uses: open-policy-agent/setup-conftest@v2
+        with:
+          version: v0.56.0
+      # - uses: aws-actions/configure-aws-credentials@v4   # OIDC role (read-only)
+      - name: Plan + policy test
+        run: |
+          cd terraform/environments
+          tofu init -backend=false
+          tofu plan -var-file=${{ matrix.env.dir }}/terraform.tfvars -out=tfplan || true
+          tofu show -json tfplan > plan.json
+          # no-public-DB (no params)
+          conftest test plan.json --policy ../../policy/conftest --namespace main
+          # residency (inject the geo allow-list)
+          jq '. + {parameters: {allowed_regions: ${{ matrix.env.allowed }}}}' plan.json \
+            | conftest test - --policy ../../policy/conftest --namespace main
