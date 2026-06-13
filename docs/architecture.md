@@ -3,7 +3,7 @@
 > **Document type:** High-Level Design (HLD) — part 1 of the CTO approval package (Phase D).
 > **Status:** Draft for CTO sign-off. **Nothing is built or applied to AWS.**
 > **Audience:** CTO (approval + spend), platform engineers (build), cloud-ops team (run).
-> **Companion docs:** [`assumptions.md`](assumptions.md) (living assumptions log) · [`adr/`](adr/) (one ADR per decision with full reasoning) · `lld.md` (Low-Level Design — authored *after* approval).
+> **Companion docs:** [`design-overview.md`](design-overview.md) (the 2-page exec summary — start there) · [`assumptions.md`](assumptions.md) (living assumptions log) · [`adr/`](adr/) (one ADR per decision with full reasoning) · `lld.md` (Low-Level Design — authored *after* approval).
 > **Source of truth for decisions:** the [ADR index](#9-decision-record-index-reasoning-lives-in-the-adrs). Where this doc says "see ADR-NNNN", that ADR holds the options, trade-offs, and the *why*.
 
 ---
